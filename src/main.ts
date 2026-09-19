@@ -9,8 +9,12 @@ import { createGarden, GardenScene } from './game/scene.ts';
 import type { Selection } from './game/scene.ts';
 import { portrait, enemyPortrait, heroArt } from './game/art.ts';
 import { Sound } from './game/sound.ts';
-import { request } from './ui/api.ts';
-import type { SessionInfo, LevelProgress } from './shared/api.ts';
+import { ApiError, request } from './ui/api.ts';
+import type { SessionInfo, LevelProgress, CompletionPayload } from './shared/api.ts';
+
+interface PendingCompletion extends CompletionPayload {
+  submissionId: string;
+}
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const sound = new Sound();
@@ -22,8 +26,8 @@ let authMode: 'login' | 'register' = 'login',
   authBusy = false,
   toastTimer: ReturnType<typeof setTimeout> | undefined;
 let selected: Selection = 'derivative',
-  saving = false,
   libraryTab = 'units';
+let saving: Battle | null = null;
 const escape = (s: string): string =>
   s.replace(
     /[&<>"']/g,
@@ -39,7 +43,8 @@ const minute = (seconds: number): string =>
     .padStart(2, '0')}:${Math.floor(seconds % 60)
     .toString()
     .padStart(2, '0')}`;
-const pendingKey = (): string => `fg:pending:${session.user?.id}:${session.user?.username}`;
+const pendingKey = (owner = session): string =>
+  `fg:pending:${owner.user?.id}:${owner.user?.username}`;
 
 function header(): string {
   return `<header class="topbar"><a class="brand" href="#" data-action="home" aria-label="函数保卫战首页"><span class="brand-mark">D<i></i></span><span><b>函数保卫战</b><small>FUNCTION GARDEN</small></span></a><nav class="top-actions"><button class="text-button" data-action="library">函数手册 <span class="key-hint">?</span></button><button class="round-button" data-action="sound" aria-label="${sound.enabled ? '关闭音效' : '开启音效'}" title="音效">${sound.enabled ? '♪' : '♩'}</button>${session.user ? `<span class="user-chip"><i></i>${escape(session.user.username)}</span><button class="text-button logout" data-action="logout">退出</button>` : '<span class="edition">LOCAL EDITION · 01</span>'}</nav></header>`;
@@ -117,15 +122,50 @@ async function submitAuth(form: HTMLFormElement): Promise<void> {
   }
 }
 async function retryPending(): Promise<void> {
-  const stored = localStorage.getItem(pendingKey());
+  const owner = session,
+    user = owner.user,
+    key = pendingKey(owner),
+    stored = localStorage.getItem(key);
+  if (!user) return;
   if (!stored) return;
+  let payload: Partial<PendingCompletion> | null;
   try {
-    const payload: unknown = JSON.parse(stored);
-    const result = await request<{ progress: LevelProgress[] }>('/api/progress/complete', payload);
-    session.progress = result.progress;
-    localStorage.removeItem(pendingKey());
+    payload = JSON.parse(stored) as Partial<PendingCompletion> | null;
+  } catch {
+    localStorage.removeItem(key);
+    return;
+  }
+  if (
+    !payload ||
+    payload.userId !== user.id ||
+    payload.progressRevision !== user.progressRevision ||
+    typeof payload.submissionId !== 'string'
+  ) {
+    // Pre-versioning caches cannot be distinguished from scores invalidated by an admin.
+    localStorage.removeItem(key);
+    return;
+  }
+  try {
+    await submitProgress(owner, key, stored);
   } catch {
     /* A pending completion remains available for the next connection. */
+  }
+}
+async function submitProgress(owner: SessionInfo, key: string, stored: string): Promise<boolean> {
+  const isCurrent = (): boolean => session === owner && localStorage.getItem(key) === stored;
+  try {
+    const result = await request<{ progress: LevelProgress[] }>(
+      '/api/progress/complete',
+      JSON.parse(stored),
+    );
+    if (!isCurrent()) return false;
+    owner.progress = result.progress;
+    localStorage.removeItem(key);
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 400 || error.status === 409) && isCurrent())
+      localStorage.removeItem(key);
+    throw error;
   }
 }
 function showLobby(): void {
@@ -155,7 +195,7 @@ function startBattle(levelId: number, seed?: number): void {
   closeModal();
   stopGame();
   selected = 'derivative';
-  saving = false;
+  saving = null;
   const model = new Battle(levelId, seed ?? crypto.getRandomValues(new Uint32Array(1))[0]!);
   battle = model;
   const level = model.level;
@@ -305,23 +345,29 @@ async function showOutcome(model: Battle): Promise<void> {
   if (won) await saveResult(model);
 }
 async function saveResult(model: Battle): Promise<void> {
+  if (battle !== model || !session.user || saving === model) return;
+  const owner = session,
+    key = pendingKey(owner);
+  saving = model;
   const homeButton = document.querySelector<HTMLButtonElement>('[data-action="result-home"]');
   if (homeButton) homeButton.disabled = true;
-  if (saving) return;
-  saving = true;
-  const payload = {
+  const payload: PendingCompletion = {
+    userId: session.user.id,
+    progressRevision: session.user.progressRevision,
+    submissionId: crypto.getRandomValues(new Uint32Array(4)).join('-'),
     level: model.level.id,
     stars: model.stars,
     seconds: Math.max(1, Number(model.time.toFixed(2))),
   };
-  localStorage.setItem(pendingKey(), JSON.stringify(payload));
+  const stored = JSON.stringify(payload);
+  localStorage.setItem(key, stored);
   const status = document.querySelector('#save-status');
+  const isCurrent = (): boolean =>
+    session === owner && battle === model && document.querySelector('#save-status') === status;
   if (status) status.textContent = '正在保存闯关进度…';
   try {
-    const result = await request<{ progress: LevelProgress[] }>('/api/progress/complete', payload);
-    session.progress = result.progress;
-    localStorage.removeItem(pendingKey());
-    if (battle === model) {
+    const applied = await submitProgress(owner, key, stored);
+    if (applied && isCurrent()) {
       if (status) status.textContent = '✓ 进度已保存，可以安心离开。';
       const button = document.querySelector<HTMLButtonElement>('#result-primary');
       if (button) button.disabled = false;
@@ -329,13 +375,16 @@ async function saveResult(model: Battle): Promise<void> {
       if (retry) retry.hidden = true;
     }
   } catch (error) {
-    if (status) status.textContent = errorMessage(error) + ' 成绩已暂存，下次登录时会重试。';
+    if (!isCurrent()) return;
+    const discarded = error instanceof ApiError && (error.status === 400 || error.status === 409);
+    if (status)
+      status.textContent =
+        errorMessage(error) + (discarded ? '' : ' 成绩已暂存，下次登录时会重试。');
     const retry = document.querySelector<HTMLElement>('#save-retry');
-    if (retry) retry.hidden = false;
+    if (retry) retry.hidden = discarded;
   } finally {
-    saving = false;
-    const home = document.querySelector<HTMLButtonElement>('[data-action="result-home"]');
-    if (home) home.disabled = false;
+    if (saving === model) saving = null;
+    if (isCurrent() && homeButton) homeButton.disabled = false;
   }
 }
 

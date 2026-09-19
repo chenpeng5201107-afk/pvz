@@ -361,22 +361,45 @@ const superDigits: Record<string, string> = {
 };
 const numberText = (v: number): string =>
   Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(5)));
+function groupedBase(expr: Expr): string {
+  const text = format(expr);
+  return expr.type === 'x' || (expr.type === 'number' && expr.value >= 0) ? text : `(${text})`;
+}
+function productText(terms: Expr[]): string {
+  if (!terms.length) return '1';
+  return terms
+    .map((term, i) => {
+      if (i === 0 && terms.length > 1 && term.type === 'number' && term.value === -1) return '−';
+      const text = format(term),
+        grouped =
+          term.type === 'add' ||
+          term.type === 'mul' ||
+          (i > 0 && term.type === 'number' && term.value < 0),
+        factor = grouped ? `(${text})` : text,
+        coefficient =
+          i === 1 && terms[0]!.type === 'number' && (terms[0]!.value === -1 || !/^\d/.test(factor));
+      return `${i > 0 && !coefficient ? '·' : ''}${factor}`;
+    })
+    .join('');
+}
 export function format(expr: Expr): string {
   if (expr.type === 'number') return numberText(expr.value).replace('-', '−');
   if (expr.type === 'x') return 'x';
   if (expr.type === 'add') return expr.terms.map(format).join(' + ').replace(/\+ −/g, '− ');
   if (expr.type === 'mul') {
-    return expr.terms
-      .map((t, i) => {
-        if (i === 0 && t.type === 'number' && t.value === -1) return '−';
-        const s = format(t);
-        return t.type === 'add' ? `(${s})` : s;
-      })
-      .join('');
+    const numerator: Expr[] = [],
+      denominator: Expr[] = [];
+    for (const term of expr.terms) {
+      if (term.type === 'pow' && term.exponent === -1) denominator.push(term.base);
+      else numerator.push(term);
+    }
+    if (!denominator.length) return productText(numerator);
+    const bottom: Expr =
+      denominator.length === 1 ? denominator[0]! : { type: 'mul', terms: denominator };
+    return `${productText(numerator)}/${groupedBase(bottom)}`;
   }
   if (expr.type === 'pow') {
-    const b = format(expr.base),
-      base = expr.base.type === 'x' || expr.base.type === 'number' ? b : `(${b})`;
+    const base = groupedBase(expr.base);
     if (expr.exponent === -1) return `1/${base}`;
     if (expr.exponent === 0.5) return `√${base}`;
     if (Number.isInteger(expr.exponent))

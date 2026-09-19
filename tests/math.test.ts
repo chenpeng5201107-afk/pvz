@@ -91,3 +91,25 @@ test('symbolic derivatives match numerical derivatives for supported nested expr
       assert.ok(Math.abs(numerical - evaluate(derivative(expr), x)) < 1e-5, format(expr));
     }
 });
+
+test('fraction products display coefficients, signs and denominators without ambiguity', () => {
+  const linear = add(mul(n(2), X), n(1));
+  assert.equal(format(derivative(fn('ln', linear))), '2/(2x + 1)');
+  assert.equal(format(mul(n(-1), pow(linear, -1))), '−1/(2x + 1)');
+  assert.equal(format(mul(n(-2), X, pow(linear, -1))), '−2x/(2x + 1)');
+  assert.equal(format(mul(n(2), pow(X, -1), fn('sin', X))), '2sin(x)/x');
+  assert.equal(format(mul(pow(X, -1), pow(linear, -1))), '1/(x·(2x + 1))');
+  assert.equal(format(mul(add(X, n(1)), pow(linear, -1))), '(x + 1)/(2x + 1)');
+});
+
+test('multiplication keeps natural coefficients and separates adjacent numbers and factors', () => {
+  assert.equal(format(mul(n(3), X)), '3x');
+  assert.equal(format(mul(n(-1), X)), '−x');
+  assert.equal(format(mul(n(3), X, fn('sin', X))), '3x·sin(x)');
+  assert.equal(format({ type: 'mul', terms: [n(2), n(3)] }), '2·3');
+  assert.equal(
+    format({ type: 'mul', terms: [n(2), { type: 'pow', base: n(3), exponent: 2 }] }),
+    '2·3²',
+  );
+  assert.equal(format({ type: 'pow', base: n(-2), exponent: 2 }), '(−2)²');
+});

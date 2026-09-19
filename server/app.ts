@@ -1,12 +1,15 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { Store } from './store.ts';
 import type { PublicUser } from '../src/shared/api.ts';
 import { LEVELS } from '../src/core/content.ts';
+import { databasePage, isLoopbackAddress } from './admin.ts';
+
+const adminScript = readFileSync(new URL('./admin-client.js', import.meta.url), 'utf8');
 
 const SESSION_SECONDS = 60 * 60 * 24 * 7;
 const digest = (token: string): string => createHash('sha256').update(token).digest('hex');
@@ -54,13 +57,37 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
 function credentials(body: Record<string, unknown>): { username: string; password: string } {
   if (typeof body.username !== 'string' || typeof body.password !== 'string')
     throw new HttpError(400, '请填写用户名和密码');
-  const username = body.username.normalize('NFKC').trim(),
-    password = body.password;
+  return { username: validateUsername(body.username), password: validatePassword(body.password) };
+}
+function validateUsername(value: unknown): string {
+  if (typeof value !== 'string') throw new HttpError(400, '请填写用户名');
+  const username = value.normalize('NFKC').trim();
   if (!/^[\p{L}\p{N}_-]{2,20}$/u.test(username))
     throw new HttpError(400, '用户名需为 2–20 个汉字、字母、数字、下划线或短横线');
-  if (password.length < 8 || password.length > 128)
+  return username;
+}
+function validatePassword(password: unknown): string {
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128)
     throw new HttpError(400, '密码长度需为 8–128 个字符');
-  return { username, password };
+  return password;
+}
+function progressValues(body: Record<string, unknown>) {
+  const { level, stars, seconds } = body;
+  if (
+    typeof level !== 'number' ||
+    !Number.isInteger(level) ||
+    !LEVELS.some((entry) => entry.id === level) ||
+    typeof stars !== 'number' ||
+    !Number.isInteger(stars) ||
+    stars < 1 ||
+    stars > 3 ||
+    typeof seconds !== 'number' ||
+    !Number.isFinite(seconds) ||
+    seconds < 1 ||
+    seconds > 86400
+  )
+    throw new HttpError(400, '关卡成绩格式不正确');
+  return { level, stars, seconds };
 }
 export interface AppOptions {
   database: string;
@@ -70,7 +97,27 @@ export interface AppOptions {
 }
 export function createApp(options: AppOptions) {
   const store = new Store(options.database),
-    publicDir = resolve(options.publicDir);
+    publicDir = resolve(options.publicDir),
+    adminToken = randomBytes(32).toString('hex');
+  function requireLocalAdmin(req: IncomingMessage): void {
+    const address = server.address(),
+      expectedHosts = ['127.0.0.1', 'localhost', '[::1]'].map(
+        (host) => `${host}${req.socket.localPort === 80 ? '' : `:${req.socket.localPort}`}`,
+      );
+    if (
+      !address ||
+      typeof address === 'string' ||
+      !isLoopbackAddress(address.address) ||
+      !isLoopbackAddress(req.socket.remoteAddress) ||
+      !expectedHosts.includes(req.headers.host ?? '') ||
+      req.headers.forwarded ||
+      Object.keys(req.headers).some((name) => name.startsWith('x-forwarded-')) ||
+      (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) ||
+      req.headers['sec-fetch-site'] === 'cross-site'
+    ) {
+      throw new HttpError(403, '管理页面仅允许在本机监听模式下直接从本机访问');
+    }
+  }
   const limits = new Map<string, { count: number; expires: number }>();
   function limit(req: IncomingMessage, action: string): void {
     const now = Date.now();
@@ -99,8 +146,71 @@ export function createApp(options: AppOptions) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
-    const pathname = new URL(req.url ?? '/', 'http://localhost').pathname,
+    const url = new URL(req.url ?? '/', 'http://localhost'),
+      pathname = url.pathname,
       method = req.method ?? 'GET';
+    if (pathname === '/database' || pathname === '/database.js') {
+      requireLocalAdmin(req);
+      if (method !== 'GET' && method !== 'HEAD') throw new HttpError(405, '不支持的请求方式');
+      const html =
+        pathname === '/database' ? databasePage(store, url.searchParams, adminToken) : adminScript;
+      res.writeHead(200, {
+        'Content-Type':
+          pathname === '/database' ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8',
+        'Content-Length': Buffer.byteLength(html),
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy':
+          "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      });
+      res.end(method === 'HEAD' ? undefined : html);
+      return;
+    }
+    if (pathname.startsWith('/api/admin/')) {
+      requireLocalAdmin(req);
+      if (method !== 'POST') throw new HttpError(405, '不支持的请求方式');
+      if (
+        req.headers.origin !== `http://${req.headers.host}` ||
+        req.headers['x-admin-token'] !== adminToken
+      )
+        throw new HttpError(403, '管理请求校验失败，请刷新管理页面重试');
+      const match = pathname.match(
+        /^\/api\/admin\/users\/([1-9]\d*)\/(rename|password|logout|progress|reset-progress|delete)$/,
+      );
+      if (!match) throw new HttpError(404, '没有找到这个管理操作');
+      const userId = Number(match[1]),
+        action = match[2],
+        body = await bodyOf(req),
+        user = store.userById(userId);
+      if (!user) throw new HttpError(404, '用户不存在，请刷新列表');
+      if (
+        (action === 'delete' || action === 'reset-progress') &&
+        body.confirmUsername !== user.username
+      )
+        throw new HttpError(400, '请输入该用户的完整用户名确认操作');
+      if (action === 'rename') {
+        const username = validateUsername(body.username),
+          existing = store.userByName(username);
+        if (existing && existing.id !== userId)
+          throw new HttpError(409, '这个用户名已经有人使用了');
+        store.renameUser(userId, username);
+      } else if (action === 'password') {
+        const password = validatePassword(body.password),
+          previous = store.userByName(user.username)!,
+          salt = randomBytes(16).toString('hex'),
+          hash = (await passwordHash(password, salt)).toString('hex'),
+          current = store.userByName(user.username);
+        if (!current || current.id !== userId || current.password_hash !== previous.password_hash)
+          throw new HttpError(409, '用户资料已变化，请刷新后重试');
+        store.resetPassword(userId, hash, salt);
+      } else if (action === 'logout') store.revokeSessions(userId);
+      else if (action === 'progress') {
+        const { level, stars, seconds } = progressValues(body);
+        store.setProgress(userId, level, stars, seconds);
+      } else if (action === 'reset-progress') store.resetProgress(userId);
+      else if (action === 'delete') store.deleteUser(userId);
+      json(res, 200, { ok: true });
+      return;
+    }
     if (pathname.startsWith('/api/')) {
       if (method !== 'GET') {
         const origin = req.headers.origin,
@@ -149,13 +259,20 @@ export function createApp(options: AppOptions) {
           record?.salt ?? '00000000000000000000000000000000',
         );
         const expected = Buffer.from(record?.password_hash ?? '00'.repeat(64), 'hex');
+        const current = store.userByName(username);
         if (
           !record ||
+          current?.id !== record.id ||
+          current.password_hash !== record.password_hash ||
           candidate.length !== expected.length ||
           !timingSafeEqual(candidate, expected)
         )
           throw new HttpError(401, '用户名或密码不正确');
-        const user = { id: record.id, username: record.username };
+        const user = {
+          id: current.id,
+          username: current.username,
+          progressRevision: current.progressRevision,
+        };
         setSession(res, user);
         json(res, 200, { user, progress: store.progress(user.id) });
         return;
@@ -168,24 +285,11 @@ export function createApp(options: AppOptions) {
         return;
       }
       if (pathname === '/api/progress/complete' && method === 'POST') {
-        const user = requireUser(req),
-          body = await bodyOf(req),
-          { level, stars, seconds } = body;
-        if (
-          typeof level !== 'number' ||
-          !Number.isInteger(level) ||
-          level < 1 ||
-          !LEVELS.some((entry) => entry.id === level) ||
-          typeof stars !== 'number' ||
-          !Number.isInteger(stars) ||
-          stars < 1 ||
-          stars > 3 ||
-          typeof seconds !== 'number' ||
-          !Number.isFinite(seconds) ||
-          seconds < 1 ||
-          seconds > 86400
-        )
-          throw new HttpError(400, '关卡成绩格式不正确');
+        const body = await bodyOf(req),
+          user = requireUser(req),
+          { level, stars, seconds } = progressValues(body);
+        if (body.userId !== user.id || body.progressRevision !== user.progressRevision)
+          throw new HttpError(409, '账号或进度已变化，这份旧成绩已作废，请重新登录后挑战');
         const progress = store.progress(user.id),
           unlocked = Math.min(LEVELS.length, Math.max(0, ...progress.map((p) => p.level)) + 1);
         if (level > unlocked) throw new HttpError(403, '请先完成前面的关卡');
