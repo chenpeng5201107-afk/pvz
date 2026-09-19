@@ -1,0 +1,28 @@
+{
+  "name": "function-garden",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build --configLoader native",
+    "start": "node server/index.ts",
+    "test": "node --test --test-isolation=none tests/*.test.ts",
+    "check": "tsc --noEmit",
+    "format": "prettier --write src server tests scripts vite.config.ts",
+    "backup": "node scripts/backup.mjs"
+  },
+  "dependencies": {
+    "phaser": "3.90.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "prettier": "^3.9.8",
+    "terser": "^5.51.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0"
+  }
+}
