@@ -1,0 +1,556 @@
+{
+  "source": "codex-clipboard-a170be6c-6ab8-47e5-9a04-7a927a50db6c.png",
+  "assets": [
+    {
+      "id": 1,
+      "file": "battle-background.png",
+      "sourceBox": [
+        5,
+        0,
+        705,
+        294
+      ],
+      "size": [
+        699,
+        294
+      ],
+      "contentSize": [
+        691,
+        286
+      ],
+      "footAnchor": null
+    },
+    {
+      "id": 2,
+      "file": "garden-menu-background.png",
+      "sourceBox": [
+        732,
+        18,
+        1308,
+        292
+      ],
+      "size": [
+        576,
+        274
+      ],
+      "contentSize": [
+        576,
+        274
+      ],
+      "footAnchor": null
+    },
+    {
+      "id": 3,
+      "file": "grass-tile.png",
+      "sourceBox": [
+        1382,
+        13,
+        1622,
+        293
+      ],
+      "size": [
+        240,
+        278
+      ],
+      "contentSize": [
+        232,
+        270
+      ],
+      "footAnchor": null
+    },
+    {
+      "id": 4,
+      "file": "unit-derivative.png",
+      "sourceBox": [
+        20,
+        336,
+        195,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        155,
+        158
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 5,
+      "file": "unit-ln.png",
+      "sourceBox": [
+        195,
+        332,
+        354,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        154,
+        167
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 6,
+      "file": "unit-exp.png",
+      "sourceBox": [
+        370,
+        326,
+        540,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        156,
+        182
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 7,
+      "file": "unit-asin.png",
+      "sourceBox": [
+        543,
+        334,
+        699,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        140,
+        171
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 8,
+      "file": "unit-sin.png",
+      "sourceBox": [
+        704,
+        332,
+        867,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        146,
+        165
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 9,
+      "file": "unit-square.png",
+      "sourceBox": [
+        869,
+        332,
+        1035,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        142,
+        162
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 10,
+      "file": "unit-reciprocal.png",
+      "sourceBox": [
+        1035,
+        332,
+        1198,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        142,
+        159
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 11,
+      "file": "unit-bomb.png",
+      "sourceBox": [
+        1200,
+        366,
+        1321,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        99,
+        129
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 12,
+      "file": "unit-area-bomb.png",
+      "sourceBox": [
+        1326,
+        356,
+        1489,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        143,
+        154
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 13,
+      "file": "unit-row-bomb.png",
+      "sourceBox": [
+        1489,
+        377,
+        1672,
+        526
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        174,
+        101
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 14,
+      "file": "enemy-linear.png",
+      "sourceBox": [
+        26,
+        577,
+        163,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        112,
+        174
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 15,
+      "file": "enemy-power.png",
+      "sourceBox": [
+        200,
+        573,
+        337,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        121,
+        189
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 16,
+      "file": "enemy-exponential.png",
+      "sourceBox": [
+        380,
+        571,
+        534,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        116,
+        200
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 17,
+      "file": "enemy-logarithm.png",
+      "sourceBox": [
+        587,
+        576,
+        730,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        119,
+        188
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 18,
+      "file": "enemy-sine.png",
+      "sourceBox": [
+        763,
+        579,
+        921,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        137,
+        188
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 19,
+      "file": "enemy-arcsine.png",
+      "sourceBox": [
+        948,
+        579,
+        1096,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        127,
+        181
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 20,
+      "file": "enemy-radical.png",
+      "sourceBox": [
+        1135,
+        574,
+        1305,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        126,
+        172
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 21,
+      "file": "enemy-fraction.png",
+      "sourceBox": [
+        1340,
+        577,
+        1477,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        122,
+        178
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 22,
+      "file": "enemy-nested.png",
+      "sourceBox": [
+        1514,
+        573,
+        1672,
+        775
+      ],
+      "size": [
+        256,
+        256
+      ],
+      "contentSize": [
+        130,
+        192
+      ],
+      "footAnchor": [
+        128,
+        240
+      ]
+    },
+    {
+      "id": 23,
+      "file": "ui-toolbar.png",
+      "sourceBox": [
+        17,
+        820,
+        668,
+        917
+      ],
+      "size": [
+        642,
+        97
+      ],
+      "contentSize": [
+        634,
+        89
+      ],
+      "footAnchor": null
+    },
+    {
+      "id": 24,
+      "file": "ui-card.png",
+      "sourceBox": [
+        710,
+        813,
+        851,
+        919
+      ],
+      "size": [
+        136,
+        108
+      ],
+      "contentSize": [
+        128,
+        100
+      ],
+      "footAnchor": null
+    },
+    {
+      "id": 25,
+      "file": "ui-panel.png",
+      "sourceBox": [
+        946,
+        810,
+        1316,
+        921
+      ],
+      "size": [
+        364,
+        109
+      ],
+      "contentSize": [
+        356,
+        101
+      ],
+      "footAnchor": null
+    },
+    {
+      "id": 26,
+      "file": "ui-button.png",
+      "sourceBox": [
+        1384,
+        821,
+        1661,
+        914
+      ],
+      "size": [
+        264,
+        76
+      ],
+      "contentSize": [
+        256,
+        68
+      ],
+      "footAnchor": null
+    }
+  ]
+}

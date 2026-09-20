@@ -6,6 +6,7 @@ import ts from 'typescript';
 import type { Battle } from '../src/core/battle.ts';
 import type { CompletionPayload, LevelProgress, SessionInfo } from '../src/shared/api.ts';
 import { ApiError } from '../src/ui/api.ts';
+import { LEVELS } from '../src/core/content.ts';
 
 // Run the actual entry-point functions without starting Phaser or contacting a real server.
 const source = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
@@ -42,6 +43,7 @@ function fixture() {
     exports: {},
     require: (path: string) => {
       if (path === './game/sound.ts') return { Sound: class {} };
+      if (path === './core/content.ts') return { LEVELS };
       if (path === './ui/api.ts')
         return {
           ApiError,
@@ -78,7 +80,8 @@ const account = (id = 1, progressRevision = 0): SessionInfo => ({
   user: { id, username: `玩家${id}`, progressRevision },
   progress: [],
 });
-const model = () => ({ level: { id: 1 }, stars: 3, time: 20 }) as Battle;
+const model = (level = 1, stars = 3, time = 20) =>
+  ({ level: { id: level }, stars, time }) as Battle;
 const key = (owner: SessionInfo) => `fg:pending:${owner.user!.id}:${owner.user!.username}`;
 const pending = (owner: SessionInfo) =>
   JSON.stringify({
@@ -102,7 +105,10 @@ test('new scores carry the account and progress revision that produced them', as
   await saving;
   assert.equal(f.calls[0]!.body.userId, 1);
   assert.equal(f.calls[0]!.body.progressRevision, 4);
-  assert.deepEqual(owner.progress, progress);
+  assert.deepEqual(
+    Array.from(owner.progress, (entry) => ({ ...entry })),
+    progress,
+  );
   assert.equal(f.storage.has(key(owner)), false);
 });
 
@@ -132,11 +138,12 @@ test('late retry responses cannot change a new login, even for the same account'
   f.setSession(first);
   f.storage.set(key(first), pending(first));
   const retrying = f.retryPending();
+  const migrated = f.storage.get(key(first));
   f.setSession(newLogin);
   f.calls[0]!.resolve({ progress });
   await retrying;
   assert.deepEqual(newLogin.progress, []);
-  assert.equal(f.storage.get(key(first)), pending(first));
+  assert.equal(f.storage.get(key(first)), migrated);
 });
 
 for (const newerFirst of [false, true]) {
@@ -170,7 +177,10 @@ for (const newerFirst of [false, true]) {
       await newSave;
     }
     assert.notEqual(oldStored, newStored, 'distinct battles need distinct cache identities');
-    assert.deepEqual(owner.progress, progress);
+    assert.deepEqual(
+      Array.from(owner.progress, (entry) => ({ ...entry })),
+      progress,
+    );
     assert.equal(f.storage.has(key(owner)), false);
   });
 }
@@ -225,7 +235,10 @@ test('offline scores remain available and sync successfully on reconnection', as
   const retrying = f.retryPending();
   f.calls[1]!.resolve({ progress });
   await retrying;
-  assert.deepEqual(owner.progress, progress);
+  assert.deepEqual(
+    Array.from(owner.progress, (entry) => ({ ...entry })),
+    progress,
+  );
   assert.equal(f.storage.has(key(owner)), false);
 });
 
@@ -239,4 +252,179 @@ test('server-rejected stale scores are removed instead of retried on every login
   await retrying;
   assert.equal(f.storage.has(key(owner)), false);
   assert.deepEqual(owner.progress, []);
+});
+
+test('repeated offline wins preserve the best stars and time instead of the last result', async () => {
+  const f = fixture(),
+    owner = account();
+  f.setSession(owner);
+  for (const [stars, time] of [
+    [3, 80],
+    [1, 150],
+    [2, 65],
+  ]) {
+    const battle = model(1, stars, time);
+    f.setBattle(battle);
+    const saving = f.saveResult(battle);
+    f.calls.at(-1)!.reject(new ApiError('断线', 0));
+    await saving;
+  }
+  const retrying = f.retryPending();
+  const sent = f.calls.at(-1)!.body;
+  f.calls.at(-1)!.resolve({ progress: [{ level: 1, stars: 3, bestSeconds: 65 }] });
+  await retrying;
+  assert.equal(sent.stars, 3);
+  assert.equal(sent.seconds, 65);
+  assert.equal(f.storage.has(key(owner)), false);
+});
+
+test('offline wins from different levels are all retried in level order', async () => {
+  const f = fixture(),
+    owner = account();
+  f.setSession(owner);
+  for (const level of [2, 1]) {
+    const battle = model(level);
+    f.setBattle(battle);
+    const saving = f.saveResult(battle);
+    f.calls.at(-1)!.reject(new ApiError('断线', 0));
+    await saving;
+  }
+  const retrying = f.retryPending();
+  f.calls[2]!.resolve({ progress });
+  // Let the sequential retry advance to its next request without timers or real networking.
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  f.calls[3]?.resolve({ progress: [...progress, { level: 2, stars: 3, bestSeconds: 20 }] });
+  await retrying;
+  assert.deepEqual(
+    f.calls.slice(2).map((call) => call.body.level),
+    [1, 2],
+  );
+  assert.equal(owner.progress.length, 2);
+  assert.equal(f.storage.has(key(owner)), false);
+});
+
+test('an existing single-entry offline cache is merged before another result is saved', async () => {
+  const f = fixture(),
+    owner = account();
+  f.setSession(owner);
+  f.storage.set(key(owner), pending(owner));
+  const battle = model(1, 1, 100);
+  f.setBattle(battle);
+  const saving = f.saveResult(battle);
+  const sent = f.calls[0]!.body;
+  f.calls[0]!.resolve({ progress });
+  await saving;
+  assert.equal(sent.stars, 3);
+  assert.equal(sent.seconds, 20);
+});
+
+for (const newerFirst of [false, true]) {
+  test(`different-level responses preserve all bests when ${newerFirst ? 'new' : 'old'} returns first`, async () => {
+    const f = fixture(),
+      owner = account();
+    owner.progress = [{ level: 1, stars: 1, bestSeconds: 100 }];
+    f.setSession(owner);
+    const first = model(),
+      second = model(2);
+    f.setBattle(first);
+    const oldSave = f.saveResult(first);
+    f.setBattle(second);
+    const newSave = f.saveResult(second);
+    const secondProgress = { level: 2, stars: 3, bestSeconds: 20 };
+    if (newerFirst) {
+      f.calls[1]!.resolve({ progress: [secondProgress] });
+      await newSave;
+      assert.deepEqual(
+        JSON.parse(f.storage.get(key(owner))!).map((p: CompletionPayload) => p.level),
+        [1],
+      );
+      f.calls[0]!.resolve({ progress });
+      await oldSave;
+    } else {
+      f.calls[0]!.resolve({ progress });
+      await oldSave;
+      assert.deepEqual(
+        JSON.parse(f.storage.get(key(owner))!).map((p: CompletionPayload) => p.level),
+        [2],
+      );
+      f.calls[1]!.resolve({ progress: [{ level: 1, stars: 1, bestSeconds: 100 }, secondProgress] });
+      await newSave;
+    }
+    assert.deepEqual(
+      Array.from(owner.progress, (entry) => ({ ...entry })),
+      [...progress, secondProgress],
+    );
+    assert.equal(f.storage.has(key(owner)), false);
+  });
+}
+
+test('partial retry success removes only confirmed levels and keeps the failed remainder', async () => {
+  const f = fixture(),
+    owner = account();
+  f.setSession(owner);
+  const first = JSON.parse(pending(owner)) as CompletionPayload;
+  f.storage.set(
+    key(owner),
+    JSON.stringify([first, { ...first, level: 2, submissionId: 'second' }]),
+  );
+  const retrying = f.retryPending();
+  f.calls[0]!.resolve({ progress });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(f.calls.length, 2);
+  f.calls[1]!.reject(new ApiError('断线', 0));
+  await retrying;
+  const remaining = JSON.parse(f.storage.get(key(owner))!) as CompletionPayload[];
+  assert.deepEqual(
+    remaining.map((entry) => entry.level),
+    [2],
+  );
+  const resumed = f.retryPending();
+  assert.equal(f.calls[2]!.body.level, 2);
+  f.calls[2]!.resolve({ progress: [...progress, { level: 2, stars: 3, bestSeconds: 20 }] });
+  await resumed;
+  assert.equal(f.storage.has(key(owner)), false);
+});
+
+test('queued retries stop on account changes without discarding another level', async () => {
+  const f = fixture(),
+    first = account(),
+    second = account(2);
+  f.setSession(first);
+  const entry = JSON.parse(pending(first)) as CompletionPayload;
+  f.storage.set(
+    key(first),
+    JSON.stringify([entry, { ...entry, level: 2, submissionId: 'second' }]),
+  );
+  f.storage.set(key(second), pending(second));
+  const retrying = f.retryPending();
+  f.setSession(second);
+  f.calls[0]!.resolve({ progress });
+  await retrying;
+  assert.equal(f.calls.length, 1);
+  assert.equal(JSON.parse(f.storage.get(key(first))!).length, 2);
+  assert.equal(f.storage.get(key(second)), pending(second));
+  assert.deepEqual(second.progress, []);
+});
+
+test('new results do not merge stale revisions, other accounts or malformed queue entries', async () => {
+  const f = fixture(),
+    owner = account(1, 1);
+  f.setSession(owner);
+  f.storage.set(
+    key(owner),
+    JSON.stringify([
+      JSON.parse(pending(account(1, 0))),
+      JSON.parse(pending(account(2, 1))),
+      { ...JSON.parse(pending(owner)), seconds: -1 },
+      null,
+    ]),
+  );
+  const battle = model(1, 1, 100);
+  f.setBattle(battle);
+  const saving = f.saveResult(battle);
+  assert.equal(f.calls[0]!.body.stars, 1);
+  assert.equal(f.calls[0]!.body.seconds, 100);
+  f.calls[0]!.resolve({ progress: [{ level: 1, stars: 1, bestSeconds: 100 }] });
+  await saving;
+  assert.equal(f.storage.has(key(owner)), false);
 });

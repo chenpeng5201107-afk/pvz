@@ -1,48 +1,83 @@
+import { renderSound, SOUND_SAMPLE_RATE, SOUND_SECONDS } from './sound-clips.ts';
+import type { SoundKind } from './sound-clips.ts';
+
+const COOLDOWN: Partial<Record<SoundKind, number>> = {
+  shot: 0.085,
+  hit: 0.1,
+  bite: 0.16,
+  kill: 0.08,
+  explosion: 0.12,
+  invalid: 0.25,
+};
+const VOLUME = 0.65;
+const MAX_VOICES = 24;
+
 export class Sound {
   enabled = localStorage.getItem('fg:sound') !== 'off';
   private context: AudioContext | null = null;
-  private lastShot = 0;
+  private master: GainNode | null = null;
+  private buffers = new Map<SoundKind, AudioBuffer>();
+  private voices = new Set<AudioBufferSourceNode>();
+  private lastPlayed = new Map<SoundKind, number>();
   async unlock(): Promise<void> {
-    if (!this.enabled) return;
-    this.context ??= new AudioContext();
-    if (this.context.state === 'suspended') await this.context.resume();
+    if (!this.enabled || typeof AudioContext === 'undefined') return;
+    try {
+      if (!this.context) {
+        this.context = new AudioContext();
+        this.master = this.context.createGain();
+        this.master.gain.value = VOLUME;
+        const compressor = this.context.createDynamicsCompressor();
+        compressor.threshold.value = -18;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 5;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.16;
+        this.master.connect(compressor);
+        compressor.connect(this.context.destination);
+      }
+      if (this.context.state === 'suspended') await this.context.resume();
+    } catch {
+      // Audio/autoplay restrictions must not prevent playing the game.
+    }
   }
   toggle(): boolean {
     this.enabled = !this.enabled;
     localStorage.setItem('fg:sound', this.enabled ? 'on' : 'off');
+    if (this.context && this.master) {
+      const now = this.context.currentTime;
+      this.master.gain.cancelScheduledValues(now);
+      this.master.gain.setTargetAtTime(this.enabled ? VOLUME : 0, now, 0.008);
+      if (!this.enabled) {
+        for (const voice of this.voices) voice.stop(now + 0.04);
+        this.lastPlayed.clear();
+      }
+    }
     if (this.enabled) void this.unlock();
     return this.enabled;
   }
   play(kind: string): void {
-    if (!this.enabled || !this.context || this.context.state !== 'running') return;
+    if (!this.enabled || !this.context || !this.master || this.context.state !== 'running') return;
+    if (!Object.hasOwn(SOUND_SECONDS, kind)) return;
+    const id = kind as SoundKind;
     const now = this.context.currentTime;
-    if (kind === 'shot' && now - this.lastShot < 0.08) return;
-    if (kind === 'shot') this.lastShot = now;
-    const notes: Record<string, [number, number, number]> = {
-      shot: [510, 280, 0.07],
-      place: [330, 660, 0.13],
-      kill: [660, 990, 0.2],
-      transform: [420, 840, 0.18],
-      explosion: [130, 35, 0.4],
-      invalid: [170, 120, 0.16],
-      leak: [170, 90, 0.3],
-      wave: [440, 660, 0.3],
-      won: [523, 1046, 0.45],
-      lost: [220, 110, 0.5],
+    if (now - (this.lastPlayed.get(id) ?? -Infinity) < (COOLDOWN[id] ?? 0)) return;
+    if (this.voices.size >= MAX_VOICES) return;
+    this.lastPlayed.set(id, now);
+    let buffer = this.buffers.get(id);
+    if (!buffer) {
+      const samples = renderSound(id);
+      buffer = this.context.createBuffer(1, samples.length, SOUND_SAMPLE_RATE);
+      buffer.copyToChannel(samples, 0);
+      this.buffers.set(id, buffer);
+    }
+    const source = this.context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.master);
+    this.voices.add(source);
+    source.onended = () => {
+      source.disconnect();
+      this.voices.delete(source);
     };
-    const note = notes[kind];
-    if (!note) return;
-    const oscillator = this.context.createOscillator(),
-      gain = this.context.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(note[0], now);
-    oscillator.frequency.exponentialRampToValueAtTime(note[1], now + note[2]);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(kind === 'shot' ? 0.022 : 0.065, now + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + note[2]);
-    oscillator.connect(gain);
-    gain.connect(this.context.destination);
-    oscillator.start(now);
-    oscillator.stop(now + note[2] + 0.02);
+    source.start(now);
   }
 }

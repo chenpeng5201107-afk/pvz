@@ -5,7 +5,7 @@ import { UNITS, ENEMIES, isBomb } from '../core/content.ts';
 import type { UnitId, EnemyKind } from '../core/content.ts';
 import type { Expr } from '../core/math.ts';
 import { format, operate } from '../core/math.ts';
-import { unitCanvas, enemyCanvas } from './art.ts';
+import { unitCanvas, enemyCanvas, artwork } from './art.ts';
 import type { Sound } from './sound.ts';
 
 export const BOARD = { width: 1120, height: 624, left: 120, top: 64, cell: 100 };
@@ -119,85 +119,57 @@ export class GardenScene extends Phaser.Scene {
     if (this.game?.canvas) this.game.canvas.style.cursor = selection ? 'crosshair' : 'default';
   }
   private drawBoard(): void {
-    const { left, top, cell } = BOARD,
-      g = this.add.graphics();
-    g.fillStyle(0xf9f7ee);
-    g.fillRoundedRect(8, 8, 1104, 606, 20);
-    g.lineStyle(1, 0xdfdfcf);
-    g.strokeRoundedRect(8, 8, 1104, 606, 20);
+    const { left, top, cell } = BOARD;
+    this.textures.addImage('garden:board', artwork('battle.webp'));
+    this.add.image(0, 0, 'garden:board').setOrigin(0);
+    const g = this.add.graphics();
     for (let row = 0; row < 5; row++)
       for (let col = 0; col < 9; col++) {
-        g.fillStyle((row + col) % 2 === 0 ? 0xf0f1e5 : 0xf5f3e9);
+        g.fillStyle((row + col) % 2 === 0 ? 0x263e13 : 0xf4e991, 0.1);
         g.fillRect(left + col * cell, top + row * cell, cell, cell);
       }
-    g.lineStyle(1, 0xdde2d2, 0.9);
+    g.lineStyle(1, 0x384519, 0.4);
     for (let col = 0; col <= 9; col++)
       g.lineBetween(left + col * cell, top, left + col * cell, top + 500);
     for (let row = 0; row <= 5; row++)
       g.lineBetween(left, top + row * cell, left + 900, top + row * cell);
-    g.lineStyle(2, 0xc2a2a0, 0.6);
-    g.lineBetween(left - 10, top, left - 10, top + 500);
+    g.lineStyle(3, 0x594b25, 0.65);
+    g.strokeRect(left, top, 900, 500);
     for (let row = 0; row < 5; row++) {
       this.add
-        .text(101, top + row * cell + 45, 'ABCDE'[row]!, {
+        .text(95, top + row * cell + 50, 'ABCDE'[row]!, {
           fontFamily: 'Georgia',
-          fontSize: '15px',
-          color: '#8d9685',
+          fontSize: '18px',
+          color: '#fff1b4',
+          stroke: '#352819',
+          strokeThickness: 4,
         })
         .setOrigin(0.5);
-      g.fillStyle(0xe2e7d6);
-      g.fillRoundedRect(34, top + row * cell + 29, 44, 43, 12);
-      g.lineStyle(1, 0xbecbb2);
-      g.strokeRoundedRect(34, top + row * cell + 29, 44, 43, 12);
-      this.add
-        .text(56, top + row * cell + 50, 'ℝ', {
-          fontFamily: 'Georgia',
-          fontSize: '29px',
-          color: '#8b9d7c',
-        })
-        .setOrigin(0.5);
-      for (let mark = 0; mark < 2; mark++) {
-        g.lineStyle(2, 0xb2baa5, 0.5);
-        g.lineBetween(
-          1048 + mark * 13,
-          top + row * cell + 46,
-          1055 + mark * 13,
-          top + row * cell + 51,
-        );
-        g.lineBetween(
-          1048 + mark * 13,
-          top + row * cell + 56,
-          1055 + mark * 13,
-          top + row * cell + 51,
-        );
-      }
     }
     for (let col = 0; col < 9; col++)
       this.add
-        .text(left + (col + 0.5) * cell, 37, String(col + 1), {
+        .text(left + (col + 0.5) * cell, 42, String(col + 1), {
           fontFamily: 'Georgia',
-          fontSize: '14px',
-          color: '#9aa18e',
+          fontSize: '17px',
+          color: '#fff1b4',
+          stroke: '#352819',
+          strokeThickness: 4,
         })
         .setOrigin(0.5);
-    this.add.text(36, 590, '常数域', {
-      fontFamily: 'Microsoft YaHei',
-      fontSize: '12px',
-      color: '#8a9480',
-    });
-    this.add.text(996, 590, '函数入侵 ←', {
-      fontFamily: 'Microsoft YaHei',
-      fontSize: '12px',
-      color: '#8a9480',
-    });
-    this.add
-      .text(560, 590, '0 < x < 1', {
-        fontFamily: 'Georgia',
-        fontSize: '15px',
-        fontStyle: 'italic',
-        color: '#98a189',
-      })
-      .setOrigin(0.5, 0);
+    for (const [x, content] of [
+      [65, '守住常数域'],
+      [560, '0 < x < 1'],
+      [1040, '函数入侵 ←'],
+    ] as const)
+      this.add
+        .text(x, 598, content, {
+          fontFamily: 'Georgia, Microsoft YaHei',
+          fontSize: '14px',
+          color: '#fff1ce',
+          stroke: '#302919',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5);
   }
   private drawHover(): void {
     this.hover.clear();
@@ -273,14 +245,14 @@ export class GardenScene extends Phaser.Scene {
     for (const unit of this.model.units) {
       let actor = this.units.get(unit.id);
       if (!actor) {
-        const image = this.add.image(0, 0, `unit:${unit.kind}`).setDisplaySize(134, 134),
+        const image = this.add.image(0, -3, `unit:${unit.kind}`).setDisplaySize(128, 128),
           health = this.add.graphics();
         const container = this.add
           .container(left + (unit.col + 0.5) * cell, top + (unit.row + 0.53) * cell, [
             image,
             health,
           ])
-          .setDepth(10 + unit.row);
+          .setDepth(10 + unit.row * 10);
         actor = { container, image, health };
         this.units.set(unit.id, actor);
       }
@@ -302,17 +274,18 @@ export class GardenScene extends Phaser.Scene {
       const formula = format(enemy.expression),
         kind = kindOf(enemy.expression);
       if (!actor) {
-        const image = this.add.image(0, 4, `enemy:${kind}`).setDisplaySize(123, 123);
+        const image = this.add.image(0, -1, `enemy:${kind}`).setDisplaySize(123, 123);
         const label = this.add
-          .text(0, -15, '', {
+          .text(0, -51, '', {
             fontFamily: 'Georgia, Cambria Math, serif',
             fontSize: '21px',
             fontStyle: 'italic',
-            color: '#303d35',
-            padding: { x: 3, y: 2 },
+            color: '#302318',
+            backgroundColor: '#f6e5b7',
+            padding: { x: 5, y: 3 },
           })
           .setOrigin(0.5);
-        const container = this.add.container(0, 0, [image, label]).setDepth(20 + enemy.row);
+        const container = this.add.container(0, 0, [image, label]).setDepth(15 + enemy.row * 10);
         actor = { container, image, label };
         this.enemies.set(enemy.id, actor);
       }
@@ -327,9 +300,7 @@ export class GardenScene extends Phaser.Scene {
         actor.formula = formula;
         const compact = formula.replaceAll(' ', '');
         actor.label!.setText(compact.length > 15 ? compact.slice(0, 13) + '…' : compact);
-        actor.label!.setFontSize(compact.length > 9 ? 13 : compact.length > 5 ? 16 : 22);
-        actor.label!.setY(kind === 'sine' || kind === 'arcsine' ? -7 : -16);
-        actor.label!.setBackgroundColor(compact.length > 8 ? '#fbf8ed' : 'rgba(0,0,0,0)');
+        actor.label!.setFontSize(compact.length > 9 ? 13 : compact.length > 5 ? 16 : 19);
       }
     }
     for (const [id, actor] of this.enemies)
@@ -349,7 +320,7 @@ export class GardenScene extends Phaser.Scene {
             color: '#567747',
           })
           .setOrigin(0.5);
-        image = this.add.container(0, 0, [circle, letter]).setDepth(40);
+        image = this.add.container(0, 0, [circle, letter]).setDepth(70);
         this.bullets.set(bullet.id, image);
       }
       image.setPosition(left + bullet.x * cell, top + (bullet.row + 0.37) * cell);
@@ -376,7 +347,7 @@ export class GardenScene extends Phaser.Scene {
           this.reducedMotion ? 0.2 : 0.6,
         )
         .setStrokeStyle(2, 0xc77d57)
-        .setDepth(45);
+        .setDepth(75);
       this.tweens.add({
         targets: flash,
         alpha: 0,
@@ -399,7 +370,7 @@ export class GardenScene extends Phaser.Scene {
           const angle = (i * Math.PI * 2) / 7,
             spark = this.add
               .circle(x, y, 2 + (i % 2), event.type === 'kill' ? 0xc5aa61 : 0x93ab77, 0.8)
-              .setDepth(50);
+              .setDepth(80);
           this.tweens.add({
             targets: spark,
             x: x + Math.cos(angle) * 32,
@@ -426,7 +397,7 @@ export class GardenScene extends Phaser.Scene {
             padding: { x: 6, y: 3 },
           })
           .setOrigin(0.5)
-          .setDepth(60);
+          .setDepth(90);
       this.tweens.add({
         targets: label,
         y: y - 62,
@@ -464,7 +435,7 @@ export function createGarden(
     parent,
     width: BOARD.width,
     height: BOARD.height,
-    backgroundColor: '#f9f7ee',
+    backgroundColor: '#3c4c29',
     transparent: false,
     antialias: true,
     roundPixels: false,

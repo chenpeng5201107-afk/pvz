@@ -333,7 +333,8 @@ export function createApp(options: AppOptions) {
     res.writeHead(200, {
       'Content-Type': mime[extname(file)] ?? 'application/octet-stream',
       'Content-Length': info.size,
-      'Cache-Control': decoded.startsWith('/assets/')
+      // Only Vite's fingerprinted bundles are immutable; public images keep fixed names.
+      'Cache-Control': /^\/assets\/[^/]+-[\w-]{8}\.(?:js|css)$/.test(decoded)
         ? 'public, max-age=31536000, immutable'
         : 'no-cache',
     });

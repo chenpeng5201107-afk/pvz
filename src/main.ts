@@ -7,7 +7,7 @@ import type { UnitId } from './core/content.ts';
 import { format } from './core/math.ts';
 import { createGarden, GardenScene } from './game/scene.ts';
 import type { Selection } from './game/scene.ts';
-import { portrait, enemyPortrait, heroArt } from './game/art.ts';
+import { portrait, enemyPortrait, heroArt, loadArtwork } from './game/art.ts';
 import { Sound } from './game/sound.ts';
 import { ApiError, request } from './ui/api.ts';
 import type { SessionInfo, LevelProgress, CompletionPayload } from './shared/api.ts';
@@ -28,6 +28,7 @@ let authMode: 'login' | 'register' = 'login',
 let selected: Selection = 'derivative',
   libraryTab = 'units';
 let saving: Battle | null = null;
+let artworkReady = false;
 const escape = (s: string): string =>
   s.replace(
     /[&<>"']/g,
@@ -47,7 +48,7 @@ const pendingKey = (owner = session): string =>
   `fg:pending:${owner.user?.id}:${owner.user?.username}`;
 
 function header(): string {
-  return `<header class="topbar"><a class="brand" href="#" data-action="home" aria-label="函数保卫战首页"><span class="brand-mark">D<i></i></span><span><b>函数保卫战</b><small>FUNCTION GARDEN</small></span></a><nav class="top-actions"><button class="text-button" data-action="library">函数手册 <span class="key-hint">?</span></button><button class="round-button" data-action="sound" aria-label="${sound.enabled ? '关闭音效' : '开启音效'}" title="音效">${sound.enabled ? '♪' : '♩'}</button>${session.user ? `<span class="user-chip"><i></i>${escape(session.user.username)}</span><button class="text-button logout" data-action="logout">退出</button>` : '<span class="edition">LOCAL EDITION · 01</span>'}</nav></header>`;
+  return `<header class="topbar"><a class="brand" href="#" data-action="home" aria-label="植物大战僵尸—函数版首页"><span class="brand-mark">D<i></i></span><span><b>植物大战僵尸<span class="brand-edition">函数版</span></b><small>FUNCTION GARDEN · 守住你的数学花园</small></span></a><nav class="top-actions"><button class="text-button" data-action="library"${artworkReady ? '' : ' disabled'}>函数手册 <span class="key-hint">?</span></button><button class="round-button" data-action="sound" aria-label="${sound.enabled ? '关闭音效' : '开启音效'}" title="音效">${sound.enabled ? '♪' : '♩'}</button>${session.user ? `<span class="user-chip"><i></i>${escape(session.user.username)}</span><button class="text-button logout" data-action="logout">退出</button>` : '<span class="edition">十关庭院挑战</span>'}</nav></header>`;
 }
 function overlays(): string {
   return '<div class="toast" id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-label="游戏对话框"></dialog>';
@@ -89,7 +90,7 @@ function shell(content: string): void {
 function showAuth(): void {
   stopGame();
   shell(
-    `<main class="auth-layout"><section class="welcome-panel"><span class="eyebrow light">A LITTLE GARDEN OF MATHEMATICS</span><h1>让每一个变量，<br>都找到<span>归宿。</span></h1><p>种下运算，拆解函数。<br>在这座纸上的花园里，守住属于你的常数域。</p><div class="welcome-pills"><span>5 × 9 棋盘</span><span>7 种运算 + 3 档炸弹</span><span>多种解法</span></div><div class="welcome-art"><canvas id="welcome-canvas" aria-label="求导塔与对数门守卫花园"></canvas></div><span class="welcome-scribble">f(x) → c</span></section><section class="auth-card"><span class="eyebrow">YOUR GARDEN AWAITS</span><h2>${authMode === 'login' ? '欢迎回到花园' : '开启你的第一场演算'}</h2><p class="muted">${authMode === 'login' ? '登录后，继续上一次的闯关进度。' : '创建账号，记录你的每一次突破。'}</p><div class="auth-tabs" role="tablist" aria-label="账号操作"><button role="tab" aria-selected="${authMode === 'login'}" data-action="auth-login">登录</button><button role="tab" aria-selected="${authMode === 'register'}" data-action="auth-register">注册</button></div><form id="auth-form"><label class="field">用户名<input name="username" autocomplete="username" placeholder="给你的花园取一个名字" minlength="2" maxlength="20" required aria-describedby="username-hint"><small id="username-hint">2–20 个汉字、字母、数字、下划线或短横线</small></label><label class="field">密码<div class="password-wrap"><input name="password" type="password" autocomplete="${authMode === 'login' ? 'current-password' : 'new-password'}" placeholder="至少 8 个字符" minlength="8" maxlength="128" required><button type="button" class="password-toggle" data-action="password">显示</button></div></label><div id="auth-error" class="form-error" role="alert"></div><button class="button primary wide" type="submit">${authMode === 'login' ? '进入花园' : '创建账号并开始'} <span>→</span></button></form><div class="auth-note"><span class="tiny-leaf">✦</span> 通关进度自动保存到你的账号</div></section></main>`,
+    `<main class="auth-layout"><section class="welcome-panel"><span class="eyebrow light">THE GARDEN NEEDS YOU</span><h1>植物大战僵尸<br><span>函数版</span></h1><p>种下求导，布好函数门。<br>让来势汹汹的函数，统统归于常数。</p><div class="welcome-pills"><span>5 × 9 棋盘</span><span>7 种运算 + 3 档炸弹</span><span>多种解法</span></div><div class="welcome-art"><canvas id="welcome-canvas" aria-label="求导塔与对数门守卫花园"></canvas></div><span class="welcome-scribble">f(x) → c</span></section><section class="auth-card"><span class="eyebrow">YOUR GARDEN AWAITS</span><h2>${authMode === 'login' ? '欢迎回到花园' : '开启你的第一场演算'}</h2><p class="muted">${authMode === 'login' ? '登录后，继续上一次的闯关进度。' : '创建账号，记录你的每一次突破。'}</p><div class="auth-tabs" role="tablist" aria-label="账号操作"><button role="tab" aria-selected="${authMode === 'login'}" data-action="auth-login">登录</button><button role="tab" aria-selected="${authMode === 'register'}" data-action="auth-register">注册</button></div><form id="auth-form"><label class="field">用户名<input name="username" autocomplete="username" placeholder="给你的花园取一个名字" minlength="2" maxlength="20" required aria-describedby="username-hint"><small id="username-hint">2–20 个汉字、字母、数字、下划线或短横线</small></label><label class="field">密码<div class="password-wrap"><input name="password" type="password" autocomplete="${authMode === 'login' ? 'current-password' : 'new-password'}" placeholder="至少 8 个字符" minlength="8" maxlength="128" required><button type="button" class="password-toggle" data-action="password">显示</button></div></label><div id="auth-error" class="form-error" role="alert"></div><button class="button primary wide" type="submit">${authMode === 'login' ? '进入花园' : '创建账号并开始'} <span>→</span></button></form><div class="auth-note"><span class="tiny-leaf">✦</span> 通关进度自动保存到你的账号</div></section></main>`,
   );
   heroArt(document.querySelector<HTMLCanvasElement>('#welcome-canvas')!);
   document.querySelector<HTMLFormElement>('#auth-form')!.addEventListener('submit', (event) => {
@@ -121,50 +122,94 @@ async function submitAuth(form: HTMLFormElement): Promise<void> {
     button.disabled = false;
   }
 }
+function readPending(owner: SessionInfo): PendingCompletion[] {
+  const user = owner.user,
+    stored = localStorage.getItem(pendingKey(owner));
+  if (!user || !stored) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return [];
+  }
+  // Accept the previous single-entry format; discard invalidated account revisions.
+  const entries: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  return entries.filter((value): value is PendingCompletion => {
+    if (!value || typeof value !== 'object') return false;
+    const payload = value as Partial<PendingCompletion>;
+    return (
+      payload.userId === user.id &&
+      payload.progressRevision === user.progressRevision &&
+      typeof payload.submissionId === 'string' &&
+      payload.submissionId.length > 0 &&
+      typeof payload.level === 'number' &&
+      LEVELS.some((level) => level.id === payload.level) &&
+      typeof payload.stars === 'number' &&
+      Number.isInteger(payload.stars) &&
+      payload.stars >= 1 &&
+      payload.stars <= 3 &&
+      typeof payload.seconds === 'number' &&
+      Number.isFinite(payload.seconds) &&
+      payload.seconds >= 1 &&
+      payload.seconds <= 86400
+    );
+  });
+}
+function writePending(owner: SessionInfo, entries: PendingCompletion[]): void {
+  if (entries.length) localStorage.setItem(pendingKey(owner), JSON.stringify(entries));
+  else localStorage.removeItem(pendingKey(owner));
+}
 async function retryPending(): Promise<void> {
-  const owner = session,
-    user = owner.user,
-    key = pendingKey(owner),
-    stored = localStorage.getItem(key);
-  if (!user) return;
-  if (!stored) return;
-  let payload: Partial<PendingCompletion> | null;
-  try {
-    payload = JSON.parse(stored) as Partial<PendingCompletion> | null;
-  } catch {
-    localStorage.removeItem(key);
-    return;
-  }
-  if (
-    !payload ||
-    payload.userId !== user.id ||
-    payload.progressRevision !== user.progressRevision ||
-    typeof payload.submissionId !== 'string'
-  ) {
-    // Pre-versioning caches cannot be distinguished from scores invalidated by an admin.
-    localStorage.removeItem(key);
-    return;
-  }
-  try {
-    await submitProgress(owner, key, stored);
-  } catch {
-    /* A pending completion remains available for the next connection. */
+  const owner = session;
+  if (!owner.user) return;
+  const entries = readPending(owner).sort((a, b) => a.level - b.level);
+  writePending(owner, entries);
+  for (const payload of entries) {
+    if (session !== owner) return;
+    try {
+      await submitProgress(owner, payload);
+    } catch (error) {
+      // Keep unsent results on connection/auth failures; skip definitively rejected entries.
+      if (!(error instanceof ApiError) || (error.status !== 400 && error.status !== 409)) return;
+    }
   }
 }
-async function submitProgress(owner: SessionInfo, key: string, stored: string): Promise<boolean> {
-  const isCurrent = (): boolean => session === owner && localStorage.getItem(key) === stored;
-  try {
-    const result = await request<{ progress: LevelProgress[] }>(
-      '/api/progress/complete',
-      JSON.parse(stored),
+async function submitProgress(owner: SessionInfo, payload: PendingCompletion): Promise<boolean> {
+  const isCurrent = (): boolean =>
+    session === owner &&
+    readPending(owner).some(
+      (entry) => entry.level === payload.level && entry.submissionId === payload.submissionId,
     );
+  const discard = (): void =>
+    writePending(
+      owner,
+      readPending(owner).filter((entry) => entry.submissionId !== payload.submissionId),
+    );
+  if (!isCurrent()) return false;
+  try {
+    const result = await request<{ progress: LevelProgress[] }>('/api/progress/complete', payload);
     if (!isCurrent()) return false;
-    owner.progress = result.progress;
-    localStorage.removeItem(key);
+    // Requests for different levels can return out of order: never regress confirmed bests.
+    const progress = new Map(owner.progress.map((entry) => [entry.level, entry]));
+    for (const entry of result.progress) {
+      const previous = progress.get(entry.level);
+      progress.set(
+        entry.level,
+        previous
+          ? {
+              level: entry.level,
+              stars: Math.max(previous.stars, entry.stars),
+              bestSeconds: Math.min(previous.bestSeconds, entry.bestSeconds),
+            }
+          : entry,
+      );
+    }
+    owner.progress = [...progress.values()].sort((a, b) => a.level - b.level);
+    discard();
     return true;
   } catch (error) {
     if (error instanceof ApiError && (error.status === 400 || error.status === 409) && isCurrent())
-      localStorage.removeItem(key);
+      discard();
     throw error;
   }
 }
@@ -173,7 +218,7 @@ function showLobby(): void {
   const next = nextLevel(),
     totalStars = session.progress.reduce((s, p) => s + p.stars, 0);
   shell(
-    `<main class="lobby"><div class="lobby-title"><div><span class="eyebrow">THE GARDEN NOTEBOOK</span><h1>今天，解开新的可能。</h1></div><span class="progress-pill">✦ <b>${totalStars}</b> / ${LEVELS.length * 3} 星</span></div><section class="chapter-hero"><div class="chapter-copy"><span class="chapter-label">CHAPTER ${String(next).padStart(2, '0')} <i></i> ${session.progress.length === LEVELS.length ? '重访你的花园' : '下一段旅程'}</span><h2>${LEVELS[next - 1]!.title}</h2><p>${LEVELS[next - 1]!.description}</p><button class="button primary" data-action="level" data-level="${next}">开始闯关 <span>→</span></button><small>可暂停思考与布阵 · 0 &lt; x &lt; 1</small></div><div class="chapter-art"><canvas id="lobby-canvas" aria-label="纸上数学花园"></canvas></div></section><div class="section-heading"><h2>你的演算旅程</h2><span>完成上一章，解锁新的运算。</span></div><section class="level-grid">${LEVELS.map(
+    `<main class="lobby"><div class="lobby-title"><div><span class="eyebrow">YOUR GARDEN · 十关挑战</span><h1>庭院防线，等你来守。</h1></div><span class="progress-pill">✦ <b>${totalStars}</b> / ${LEVELS.length * 3} 星</span></div><section class="chapter-hero"><div class="chapter-copy"><span class="chapter-label">CHAPTER ${String(next).padStart(2, '0')} <i></i> ${session.progress.length === LEVELS.length ? '重访你的花园' : '下一段旅程'}</span><h2>${LEVELS[next - 1]!.title}</h2><p>${LEVELS[next - 1]!.description}</p><button class="button primary" data-action="level" data-level="${next}">开始闯关 <span>→</span></button><small>可暂停思考与布阵 · 0 &lt; x &lt; 1</small></div><div class="chapter-art"><canvas id="lobby-canvas" aria-label="手绘数学庭院"></canvas></div></section><div class="section-heading"><h2>你的演算旅程</h2><span>完成上一章，解锁新的运算。</span></div><section class="level-grid">${LEVELS.map(
       (level) => {
         const record = session.progress.find((p) => p.level === level.id),
           locked = level.id > next;
@@ -184,7 +229,7 @@ function showLobby(): void {
     )}</section><section class="notebook-strip"><div class="mini-portraits">${['derivative', 'square', 'reciprocal'].map((id) => `<img src="${portrait(id as UnitId)}" alt="">`).join('')}</div><div><h3>认识你的运算伙伴</h3><p>求导是火力，变换是钥匙。先看懂，再出手。</p></div><button class="button secondary" data-action="library">打开函数手册 ↗</button></section></main>`,
   );
   heroArt(document.querySelector<HTMLCanvasElement>('#lobby-canvas')!);
-  if (localStorage.getItem(pendingKey())) notify('有一份成绩等待同步，下次连接时会自动重试。');
+  if (localStorage.getItem(pendingKey())) notify('有成绩等待同步，下次登录时会自动重试。');
 }
 
 function startBattle(levelId: number, seed?: number): void {
@@ -347,7 +392,8 @@ async function showOutcome(model: Battle): Promise<void> {
 async function saveResult(model: Battle): Promise<void> {
   if (battle !== model || !session.user || saving === model) return;
   const owner = session,
-    key = pendingKey(owner);
+    pending = readPending(owner),
+    previous = pending.find((entry) => entry.level === model.level.id);
   saving = model;
   const homeButton = document.querySelector<HTMLButtonElement>('[data-action="result-home"]');
   if (homeButton) homeButton.disabled = true;
@@ -356,17 +402,16 @@ async function saveResult(model: Battle): Promise<void> {
     progressRevision: session.user.progressRevision,
     submissionId: crypto.getRandomValues(new Uint32Array(4)).join('-'),
     level: model.level.id,
-    stars: model.stars,
-    seconds: Math.max(1, Number(model.time.toFixed(2))),
+    stars: Math.max(previous?.stars ?? 0, model.stars),
+    seconds: Math.min(previous?.seconds ?? Infinity, Math.max(1, Number(model.time.toFixed(2)))),
   };
-  const stored = JSON.stringify(payload);
-  localStorage.setItem(key, stored);
+  writePending(owner, [...pending.filter((entry) => entry.level !== payload.level), payload]);
   const status = document.querySelector('#save-status');
   const isCurrent = (): boolean =>
     session === owner && battle === model && document.querySelector('#save-status') === status;
   if (status) status.textContent = '正在保存闯关进度…';
   try {
-    const applied = await submitProgress(owner, key, stored);
+    const applied = await submitProgress(owner, payload);
     if (applied && isCurrent()) {
       if (status) status.textContent = '✓ 进度已保存，可以安心离开。';
       const button = document.querySelector<HTMLButtonElement>('#result-primary');
@@ -389,6 +434,7 @@ async function saveResult(model: Battle): Promise<void> {
 }
 
 function showLibrary(tab = libraryTab): void {
+  if (!artworkReady) return;
   libraryTab = tab;
   if (battle) {
     battle.pause();
@@ -398,7 +444,7 @@ function showLibrary(tab = libraryTab): void {
     tab === 'units'
       ? `<div class="library-grid">${UNITS.map((u) => `<article class="library-item"><img src="${portrait(u.id)}" alt="${u.name}"><div><span class="library-tag">${u.id === 'derivative' ? '持续攻击' : isBomb(u.id) ? '救急道具' : '一次性门'} · 第 ${u.level} 章</span><h3>${u.name}<small>✦ ${u.cost}</small></h3><p>${u.hint}</p><code>${escape(u.example)}</code><small>冷却 ${u.cooldown} 秒</small></div></article>`).join('')}</div>`
       : tab === 'enemies'
-        ? `<div class="library-grid">${ENEMIES.map((e) => `<article class="library-item"><img src="${enemyPortrait(e.kind, e.formula)}" alt="${e.name}"><div><span class="library-tag">函数来客</span><h3>${e.name}</h3><code>${escape(e.formula)}</code><p>${escape(e.route)}</p></div></article>`).join('')}</div>`
+        ? `<div class="library-grid">${ENEMIES.map((e) => `<article class="library-item"><img src="${enemyPortrait(e.kind)}" alt="${e.name}"><div><span class="library-tag">函数来客</span><h3>${e.name}</h3><code>${escape(e.formula)}</code><p>${escape(e.route)}</p></div></article>`).join('')}</div>`
         : `<div class="rules-grid"><article><span>01</span><h3>先布阵，再开始</h3><p>准备阶段可以连续放置。敌人从右向左推进，越过左端就会扣除基地生命。</p></article><article><span>02</span><h3>把顺序排对</h3><p>求导塔基础射程为前方两格，覆盖前方塔时继承它的最远射程，可连续联动。门在敌人经过格子中点时先触发，然后结算子弹。</p></article><article><span>03</span><h3>随时停下来想一想</h3><p>按空格暂停，可继续花费已有能量布阵。暂停不产能量，也不推进冷却。切换标签页会自动暂停。</p></article><article><span>04</span><h3>每种变化，都讲道理</h3><p>本版所有关卡规定 0 &lt; x &lt; 1。合法但复杂的运算会照常执行；无定义的变换无效，门仍消耗。</p></article><article><span>05</span><h3>看懂你的对手</h3><p>点击“查看函数”后选择敌人，可暂停查看完整式子。敌人占格时也可补种，已过中点的不补触发；补塔也不会挡回已经过中点的敌人。</p></article><article><span>06</span><h3>留一点调整的余地</h3><p>炸弹只能种在没有己方单位的格子；敌人经过该格中点才引爆，已过中点的不触发。爆炸清除单格、3×3 或整行敌人，不伤己方。1–7 选运算，9 / 0 / B 选炸弹，S 回收塔或门（返还 50%），Esc 取消。</p></article></div>`;
   modal(
     `<button class="dialog-close" data-action="close" aria-label="关闭手册">×</button><span class="eyebrow">THE FIELD GUIDE</span><h2>一本会帮上忙的函数手册</h2><p class="muted">认清结构，再选择你的运算路线。</p><div class="manual-tabs" role="tablist"><button role="tab" aria-selected="${tab === 'units'}" data-action="library-tab" data-tab="units">运算与道具 <small>${UNITS.length}</small></button><button role="tab" aria-selected="${tab === 'enemies'}" data-action="library-tab" data-tab="enemies">函数来客 <small>09</small></button><button role="tab" aria-selected="${tab === 'rules'}" data-action="library-tab" data-tab="rules">作战规则</button></div>${contents}`,
@@ -549,8 +595,10 @@ window.addEventListener('beforeunload', (event) => {
 });
 async function boot(): Promise<void> {
   app.innerHTML =
-    '<div class="boot-screen"><span class="brand-mark">D<i></i></span><p>正在打开你的数学花园…</p></div>';
+    '<div class="boot-screen"><span class="brand-mark">D<i></i></span><p>正在布置手绘庭院…</p></div>';
   try {
+    await loadArtwork();
+    artworkReady = true;
     session = await request<SessionInfo>('/api/session');
     if (session.user) {
       await retryPending();
